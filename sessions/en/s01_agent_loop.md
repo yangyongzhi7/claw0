@@ -126,3 +126,5 @@ python en/s01_agent_loop.py
 | stop_reason    | Same branching logic           | Same logic + streaming support        |
 | Error handling | Pop last message, continue     | Retry with backoff + context guard    |
 | System prompt  | Hardcoded string               | 8-layer dynamic assembly (Section 06) |
+
+## pip install volcengine-python-sdk[ark]

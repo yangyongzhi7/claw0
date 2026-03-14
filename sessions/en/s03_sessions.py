@@ -37,7 +37,7 @@ import uuid
 import time
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Union
 
 from dotenv import load_dotenv
 from anthropic import Anthropic
@@ -133,7 +133,7 @@ class SessionStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.index_path = self.base_dir.parent / "sessions.json"
         self._index: dict[str, dict] = self._load_index()
-        self.current_session_id: str | None = None
+        self.current_session_id: Union[str, None] = None
 
     def _load_index(self) -> dict[str, dict]:
         if self.index_path.exists():
@@ -466,7 +466,7 @@ class ContextGuard:
         model: str,
         system: str,
         messages: list[dict],
-        tools: list[dict] | None = None,
+        tools: Union[list[dict],None] = None,
         max_retries: int = 2,
     ) -> Any:
         """

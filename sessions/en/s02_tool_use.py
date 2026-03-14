@@ -29,7 +29,7 @@ Required .env config:
     ANTHROPIC_API_KEY=sk-ant-xxxxx
     MODEL_ID=claude-sonnet-4-20250514
 """
-
+import json
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from anthropic import Anthropic
+from volcenginesdkarkruntime import Ark
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -49,11 +49,10 @@ from anthropic import Anthropic
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=True)
 
 MODEL_ID = os.getenv("MODEL_ID", "claude-sonnet-4-20250514")
-client = Anthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    base_url=os.getenv("ANTHROPIC_BASE_URL") or None,
+client = Ark(
+    api_key=os.environ.get("ARK_API_KEY"),
+    base_url="https://ark.cn-beijing.volces.com/api/v3",
 )
-
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant with access to tools.\n"
     "Use the tools to help the user with file operations and shell commands.\n"
@@ -330,7 +329,12 @@ def process_tool_call(tool_name: str, tool_input: dict) -> str:
 def agent_loop() -> None:
     """Main agent loop -- REPL with tools."""
 
-    messages: list[dict] = []
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        }
+    ]
 
     print_info("=" * 60)
     print_info("  claw0  |  Section 02: Tool Use")
@@ -363,12 +367,22 @@ def agent_loop() -> None:
         # Inner loop: model may chain multiple tool calls before end_turn
         while True:
             try:
-                response = client.messages.create(
+                openai_tools = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool["name"],
+                            "description": tool["description"],
+                            "parameters": tool["input_schema"]
+                        }
+                    } for tool in TOOLS
+                ]
+                response = client.chat.completions.create(
                     model=MODEL_ID,
                     max_tokens=8096,
-                    system=SYSTEM_PROMPT,
-                    tools=TOOLS,
-                    messages=messages,
+                    # system=SYSTEM_PROMPT,
+                    tools=openai_tools,
+                    messages=messages
                 )
             except Exception as exc:
                 print(f"\n{YELLOW}API Error: {exc}{RESET}\n")
@@ -380,45 +394,30 @@ def agent_loop() -> None:
 
             messages.append({
                 "role": "assistant",
-                "content": response.content,
+                "content": response.choices[0].message.content,
             })
 
-            if response.stop_reason == "end_turn":
-                assistant_text = ""
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        assistant_text += block.text
-                if assistant_text:
-                    print_assistant(assistant_text)
-                break
-
-            elif response.stop_reason == "tool_use":
+            if response.choices[0].message.tool_calls:
                 tool_results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
-                    result = process_tool_call(block.name, block.input)
+                for tool_call in response.choices[0].message.tool_calls:
+                    tool_name = tool_call.function.name
+                    tool_input = json.loads(tool_call.function.arguments)
+                    result = process_tool_call(tool_name, tool_input)
                     tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": tool_name,
                         "content": result,
                     })
-
-                # Tool results go in a user message (Anthropic API requirement)
-                messages.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
+                    messages.append({
+                        "role": "tool",
+                        "content": result,
+                        "tool_call_id": tool_call.id,
+                    })
                 continue
-
             else:
-                print_info(f"[stop_reason={response.stop_reason}]")
-                assistant_text = ""
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        assistant_text += block.text
-                if assistant_text:
-                    print_assistant(assistant_text)
+                assistant_text = response.choices[0].message.content
+                print_assistant(assistant_text)
                 break
 
 

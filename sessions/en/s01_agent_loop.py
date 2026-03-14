@@ -25,7 +25,9 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from anthropic import Anthropic
+# from anthropic import Anthropic
+from volcenginesdkarkruntime import Ark
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -34,9 +36,14 @@ from anthropic import Anthropic
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=True)
 
 MODEL_ID = os.getenv("MODEL_ID", "claude-sonnet-4-20250514")
-client = Anthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    base_url=os.getenv("ANTHROPIC_BASE_URL") or None,
+# client = Anthropic(
+#     api_key=os.getenv("ANTHROPIC_API_KEY"),
+#     base_url=os.getenv("ANTHROPIC_BASE_URL") or None,
+# )
+
+client = Ark(
+    api_key=os.environ.get("ARK_API_KEY"),
+    base_url="https://ark.cn-beijing.volces.com/api/v3",
 )
 
 SYSTEM_PROMPT = "You are a helpful AI assistant. Answer questions directly."
@@ -79,7 +86,12 @@ def print_info(text: str) -> None:
 def agent_loop() -> None:
     """Main agent loop -- conversational REPL."""
 
-    messages: list[dict] = []
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        }
+    ]
 
     print_info("=" * 60)
     print_info("  claw0  |  Section 01: The Agent Loop")
@@ -108,10 +120,10 @@ def agent_loop() -> None:
         })
 
         try:
-            response = client.messages.create(
+            response = client.chat.completions.create(
                 model=MODEL_ID,
                 max_tokens=8096,
-                system=SYSTEM_PROMPT,
+                # system=SYSTEM_PROMPT,
                 messages=messages,
             )
         except Exception as exc:
@@ -120,38 +132,31 @@ def agent_loop() -> None:
             continue
 
         # Check stop_reason to decide what happens next
-        if response.stop_reason == "end_turn":
-            assistant_text = ""
-            for block in response.content:
-                if hasattr(block, "text"):
-                    assistant_text += block.text
-
+        if response.choices[0].finish_reason == "stop":
+            assistant_text = response.choices[0].message.content
             print_assistant(assistant_text)
 
             messages.append({
                 "role": "assistant",
-                "content": response.content,
+                "content": assistant_text,
             })
 
-        elif response.stop_reason == "tool_use":
+        elif response.choices[0].finish_reason == "tool_use":
             print_info("[stop_reason=tool_use] No tools in this section.")
             print_info("See s02_tool_use.py for tool support.")
             messages.append({
                 "role": "assistant",
-                "content": response.content,
+                "content": response.choices[0].message.content,
             })
 
         else:
-            print_info(f"[stop_reason={response.stop_reason}]")
-            assistant_text = ""
-            for block in response.content:
-                if hasattr(block, "text"):
-                    assistant_text += block.text
+            print_info(f"[stop_reason={response.choices[0].finish_reason}]")
+            assistant_text = response.choices[0].message.content
             if assistant_text:
                 print_assistant(assistant_text)
             messages.append({
                 "role": "assistant",
-                "content": response.content,
+                "content": assistant_text,
             })
 
 
